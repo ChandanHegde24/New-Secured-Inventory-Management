@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: inventory_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: inventory_db
+      MYSQL_USER: inventory_app_user
+      MYSQL_PASSWORD: REPLACE_WITH_A_STRONG_PASSWORD
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+
+  mongo:
+    image: mongo:7
+    container_name: inventory_mongo
+    restart: always
+    profiles:
+      - mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  app:
+    build: .
+    container_name: inventory_app
+    depends_on:
+      - db
+    environment:
+      - DB_BACKEND=${DB_BACKEND:-mysql}
+      - DB_HOST=db
+      - DB_USER=inventory_app_user
+      - DB_PASS=REPLACE_WITH_A_STRONG_PASSWORD
+      - DB_NAME=inventory_db
+      - MONGO_URI=${MONGO_URI:-mongodb://mongo:27017}
+      - MONGO_DB_NAME=${MONGO_DB_NAME:-inventory_db}
+      # IMPORTANT: To display Tkinter on the host, you need to forward X11. 
+      # Example for Linux/Mac:
+      - DISPLAY=${DISPLAY}
+    volumes:
+      # Mount X11 socket to allow GUI forwarding
+      - /tmp/.X11-unix:/tmp/.X11-unix
+
+volumes:
+  db_data:
+  mongo_data:
