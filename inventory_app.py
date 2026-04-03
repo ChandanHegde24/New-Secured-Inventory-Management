@@ -131,7 +131,7 @@ class InventorySystem:
         
         # Use a short-lived connection just for initialization.
         db = get_db_connection()
-        if not db:
+        if db is None:
             root.withdraw()
             messagebox.showerror("Fatal Error", "Could not connect to database. Check .env file and console.")
             root.quit()
@@ -173,7 +173,7 @@ class InventorySystem:
 
     def sync_blockchain_cache(self, db):
         """Best-effort resync for in-memory headers after rollbacks or external writes."""
-        if not db:
+        if db is None:
             return
         try:
             self.blockchain.sync_chain_headers(db)
@@ -618,7 +618,7 @@ class InventorySystem:
                 self.show_message('info', 'Success', f'Removed {abs(qty_change)} units from "{item}". New total: {new_qty}.')
 
         except PyMongoError as err:
-            if db:
+            if db is not None:
                 if mined_block_index is not None and not operation_committed:
                     try:
                         self.blockchain.rollback_block(db, mined_block_index)
@@ -626,7 +626,7 @@ class InventorySystem:
                         pass
             self.show_message('error', 'Error', f'Database error: {err}\nTransaction rolled back.')
         except Exception as e:
-            if db:
+            if db is not None:
                 if mined_block_index is not None and not operation_committed:
                     try:
                         self.blockchain.rollback_block(db, mined_block_index)
@@ -712,7 +712,7 @@ class InventorySystem:
             self.show_message('info', 'Deleted', f'Product "{item_name}" deleted successfully from {self.current_branch}')
             
         except PyMongoError as err:
-            if db:
+            if db is not None:
                 if mined_block_index is not None and not operation_committed:
                     try:
                         self.blockchain.rollback_block(db, mined_block_index)
@@ -720,7 +720,7 @@ class InventorySystem:
                         pass
             self.show_message('error', 'Error', f'Failed to delete product: {err}\nTransaction rolled back.')
         except Exception as e:
-            if db:
+            if db is not None:
                 if mined_block_index is not None and not operation_committed:
                     try:
                         self.blockchain.rollback_block(db, mined_block_index)
@@ -982,7 +982,7 @@ class InventorySystem:
             self.show_message('info', 'Success', f'Transferred {quantity} units of "{item}" to {to_branch} successfully.')
 
         except PyMongoError as err:
-            if db:
+            if db is not None:
                 if mined_block_index is not None and not operation_committed:
                     try:
                         self.blockchain.rollback_block(db, mined_block_index)
@@ -990,7 +990,7 @@ class InventorySystem:
                         pass
             self.show_message('error', 'Transfer Failed', f'An error occurred: {err}\nTransaction rolled back.', parent=window)
         except Exception as e:
-            if db:
+            if db is not None:
                 if mined_block_index is not None and not operation_committed:
                     try:
                         self.blockchain.rollback_block(db, mined_block_index)
