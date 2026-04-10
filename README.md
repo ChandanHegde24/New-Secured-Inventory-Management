@@ -72,6 +72,13 @@ Insert users into the users collection with fields:
 
 Example roles: admin, user
 
+On a fresh MongoDB database, the app now auto-seeds these default users at startup:
+
+- admin1 / 1234 (Inventory_1, admin)
+- user1 / 1234 (Inventory_1, user)
+- admin2 / 1234 (Inventory_2, admin)
+- user2 / 1234 (Inventory_2, user)
+
 Then run PIN migration to hash plaintext PINs:
 
 ```bash

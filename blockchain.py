@@ -5,6 +5,10 @@ import threading
 from datetime import datetime
 from typing import Any
 
+
+BLOCK_HASH_ALGO_V1 = 'legacy_json_sorted_v1'
+POW_ALGO_V1 = 'tx_payload_pow_v1'
+
 try:
     pymongo_errors = importlib.import_module('pymongo.errors')
     MongoDuplicateKeyError = getattr(pymongo_errors, 'DuplicateKeyError')
@@ -21,6 +25,8 @@ class Blockchain:
     def __init__(self):
         self.chain = []
         self.difficulty = '00'
+        self.block_hash_algo = BLOCK_HASH_ALGO_V1
+        self.pow_algo = POW_ALGO_V1
         self._chain_lock = threading.RLock()
 
     def _to_timestamp(self, value: Any) -> float:
@@ -113,13 +119,13 @@ class Blockchain:
     def _prepare_transactions_for_storage(self, transactions):
         prepared = []
         for tx in transactions:
-            tx_time = datetime.fromtimestamp(float(tx['timestamp'])).replace(microsecond=0)
+            tx_time = round(float(tx['timestamp']), 6)
             prepared.append({
                 'user': tx.get('user'),
                 'action': tx.get('action'),
                 'item': tx.get('item'),
                 'quantity': int(tx.get('quantity', 0)),
-                'timestamp': tx_time.timestamp(),
+                'timestamp': tx_time,
                 'branch': tx.get('branch')
             })
         return prepared
@@ -133,7 +139,9 @@ class Blockchain:
                 'timestamp': 1,
                 'nonce': 1,
                 'previous_hash': 1,
-                'current_hash': 1
+                'current_hash': 1,
+                'hash_algo': 1,
+                'pow_algo': 1
             }
         ).sort('block_index', 1)
 
@@ -147,6 +155,10 @@ class Blockchain:
             }
             if block.get('current_hash'):
                 header['current_hash'] = block.get('current_hash')
+            if block.get('hash_algo'):
+                header['hash_algo'] = block.get('hash_algo')
+            if block.get('pow_algo'):
+                header['pow_algo'] = block.get('pow_algo')
             self.chain.append(header)
 
     def sync_chain_headers(self, db):
@@ -205,6 +217,10 @@ class Blockchain:
             }
             if block.get('current_hash'):
                 block_dict['current_hash'] = block.get('current_hash')
+            if block.get('hash_algo'):
+                block_dict['hash_algo'] = block.get('hash_algo')
+            if block.get('pow_algo'):
+                block_dict['pow_algo'] = block.get('pow_algo')
 
             txs = db.transactions.find({'block_index': int(block_index)}).sort([('tx_order', 1), ('_id', 1)])
             for tx in txs:
@@ -262,14 +278,14 @@ class Blockchain:
     def create_block(self, db, nonce, previous_hash, transactions, block_index, skip_pow_validation=False, session=None):
         transactions = self._normalize_transactions(transactions)
         transactions_for_storage = self._prepare_transactions_for_storage(transactions)
-        timestamp_obj = datetime.now()
+        block_timestamp = round(datetime.now().timestamp(), 6)
 
         if (not skip_pow_validation) and (not self.is_valid_proof(previous_hash, transactions, nonce, block_index)):
             raise ValueError('Invalid nonce for configured proof-of-work difficulty.')
 
         block_for_hash = {
             'index': int(block_index),
-            'timestamp': timestamp_obj.timestamp(),
+            'timestamp': block_timestamp,
             'nonce': int(nonce),
             'previous_hash': previous_hash,
             'transactions': transactions_for_storage
@@ -279,10 +295,12 @@ class Blockchain:
         db.blockchain.insert_one(
             {
                 'block_index': int(block_index),
-                'timestamp': timestamp_obj,
+                'timestamp': block_timestamp,
                 'nonce': int(nonce),
                 'previous_hash': previous_hash,
-                'current_hash': current_hash
+                'current_hash': current_hash,
+                'hash_algo': self.block_hash_algo,
+                'pow_algo': self.pow_algo
             },
             session=session
         )
@@ -296,7 +314,7 @@ class Blockchain:
                     'action': tx.get('action'),
                     'item': tx.get('item'),
                     'quantity': int(tx.get('quantity', 0)),
-                    'timestamp': datetime.fromtimestamp(float(tx.get('timestamp', 0.0))),
+                    'timestamp': round(float(tx.get('timestamp', 0.0)), 6),
                     'branch': tx.get('branch'),
                     'tx_order': tx_order
                 }
@@ -307,20 +325,24 @@ class Blockchain:
 
         block_header = {
             'index': int(block_index),
-            'timestamp': timestamp_obj.timestamp(),
+            'timestamp': block_timestamp,
             'nonce': int(nonce),
             'previous_hash': previous_hash,
-            'current_hash': current_hash
+            'current_hash': current_hash,
+            'hash_algo': self.block_hash_algo,
+            'pow_algo': self.pow_algo
         }
         if not self.chain or self.chain[-1]['index'] < block_header['index']:
             self.chain.append(block_header)
 
         return {
             'index': int(block_index),
-            'timestamp': timestamp_obj.timestamp(),
+            'timestamp': block_timestamp,
             'nonce': int(nonce),
             'previous_hash': previous_hash,
             'current_hash': current_hash,
+            'hash_algo': self.block_hash_algo,
+            'pow_algo': self.pow_algo,
             'transactions': transactions_for_storage
         }
 
@@ -373,6 +395,7 @@ class Blockchain:
                 return True
 
             previous_block_full = None
+            legacy_hash_validation_skipped = 0
             legacy_pow_skipped = 0
 
             for i, current_block_header in enumerate(self.chain):
@@ -395,9 +418,14 @@ class Blockchain:
 
                 expected_current_hash = self.hash(current_block_full)
                 stored_current_hash = current_block_full.get('current_hash')
-                if stored_current_hash and stored_current_hash != expected_current_hash:
-                    print(f"Chain invalid: Stored hash mismatch at block {current_block_full['index']}")
-                    return False
+                block_hash_algo = current_block_full.get('hash_algo')
+                strict_hash_validation = (block_hash_algo == self.block_hash_algo)
+                if strict_hash_validation:
+                    if stored_current_hash != expected_current_hash:
+                        print(f"Chain invalid: Stored hash mismatch at block {current_block_full['index']}")
+                        return False
+                elif stored_current_hash and stored_current_hash != expected_current_hash:
+                    legacy_hash_validation_skipped += 1
 
                 proof_valid = self.is_valid_proof(
                     current_block_full['previous_hash'],
@@ -407,14 +435,19 @@ class Blockchain:
                     timestamp=current_block_full['timestamp']
                 )
 
-                if not proof_valid:
-                    if stored_current_hash:
+                block_pow_algo = current_block_full.get('pow_algo')
+                strict_pow_validation = (block_pow_algo == self.pow_algo)
+                if strict_pow_validation:
+                    if not proof_valid:
                         print(f"Chain invalid: Invalid proof-of-work at block {current_block_full['index']}")
                         return False
+                elif not proof_valid:
                     legacy_pow_skipped += 1
 
                 previous_block_full = current_block_full
 
+            if legacy_hash_validation_skipped:
+                print(f"Warning: Strict hash validation skipped for {legacy_hash_validation_skipped} legacy block(s).")
             if legacy_pow_skipped:
                 print(f"Warning: Strict PoW validation skipped for {legacy_pow_skipped} legacy block(s).")
 

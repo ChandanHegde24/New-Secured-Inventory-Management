@@ -40,6 +40,7 @@ load_dotenv(DB_ENV_FILE, override=True)
 
 MONGO_URI = os.environ.get('MONGO_URI')
 MONGO_DB_NAME = os.environ.get('MONGO_DB_NAME') or 'inventory_db'
+BCRYPT_PREFIXES = ('$2a$', '$2b$', '$2y$')
 
 # Global Mongo Handles
 mongo_client = None
@@ -99,6 +100,66 @@ def _initialize_mongo_collections(db: Any):
     db.transactions.create_index([('block_index', 1), ('tx_order', 1)])
 
 
+def _is_bcrypt_hash(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    stripped = value.strip()
+    return len(stripped) >= 60 and any(stripped.startswith(prefix) for prefix in BCRYPT_PREFIXES)
+
+
+def _verify_user_pin(input_pin: str, stored_pin: Any) -> Tuple[bool, bool]:
+    """
+    Returns:
+    - is_valid: whether input_pin matches stored_pin
+    - needs_upgrade: whether stored_pin is legacy plaintext and should be hashed
+    """
+    if isinstance(stored_pin, bytes):
+        try:
+            return bcrypt.checkpw(input_pin.encode('utf-8'), stored_pin), False
+        except ValueError:
+            return False, False
+
+    stored_pin_text = str(stored_pin or '').strip()
+    if not stored_pin_text:
+        return False, False
+
+    if _is_bcrypt_hash(stored_pin_text):
+        try:
+            return bcrypt.checkpw(input_pin.encode('utf-8'), stored_pin_text.encode('utf-8')), False
+        except ValueError:
+            return False, False
+
+    is_plaintext_match = (input_pin == stored_pin_text)
+    return is_plaintext_match, is_plaintext_match
+
+
+def _seed_default_users_if_empty(db: Any):
+    """Seeds baseline users so role-based login works on a fresh database."""
+    if db.users.count_documents({}) > 0:
+        return
+
+    seed_users = [
+        {'username': 'admin1', 'pin': '1234', 'branch': 'Inventory_1', 'role': 'admin'},
+        {'username': 'user1', 'pin': '1234', 'branch': 'Inventory_1', 'role': 'user'},
+        {'username': 'admin2', 'pin': '1234', 'branch': 'Inventory_2', 'role': 'admin'},
+        {'username': 'user2', 'pin': '1234', 'branch': 'Inventory_2', 'role': 'user'},
+    ]
+
+    docs_to_insert = []
+    for user_doc in seed_users:
+        docs_to_insert.append(
+            {
+                'username': user_doc['username'],
+                'pin': bcrypt.hashpw(user_doc['pin'].encode('utf-8'), bcrypt.gensalt()).decode('utf-8'),
+                'branch': user_doc['branch'],
+                'role': user_doc['role']
+            }
+        )
+
+    db.users.insert_many(docs_to_insert, ordered=True)
+    logging.info('Seeded default users for fresh database bootstrap.')
+
+
 try:
     if MongoClient is None:
         logging.critical('pymongo is not installed. Install dependencies from requirements.txt.')
@@ -109,6 +170,7 @@ try:
         mongo_client.admin.command('ping')
         mongo_db = mongo_client[MONGO_DB_NAME]
         _initialize_mongo_collections(mongo_db)
+        _seed_default_users_if_empty(mongo_db)
 except (PyMongoError, Exception) as pool_err:
     logging.critical(f'Failed to initialize database client: {pool_err}')
 
@@ -293,25 +355,34 @@ class InventorySystem:
                 )
             
             if result:
-                stored_pin = result[0] or ''
-                if isinstance(stored_pin, bytes):
-                    hashed_pin_from_db = stored_pin
-                else:
-                    hashed_pin_from_db = str(stored_pin).encode('utf-8')
-                user_branch = result[1]
-                user_role = result[2] or 'user'
+                stored_pin = result[0]
+                user_branch = str(result[1] or '').strip()
+                user_role = str(result[2] or 'user').strip().lower()
+
+                pin_valid, pin_needs_upgrade = _verify_user_pin(pin, stored_pin)
                 
                 # Check PIN and if user is assigned to the selected branch
-                if user_branch == selected_branch and bcrypt.checkpw(pin.encode('utf-8'), hashed_pin_from_db):
+                if user_branch == selected_branch and pin_valid:
                     self.current_user = user
                     self.current_branch = selected_branch
                     self.current_role = user_role
+
+                    if pin_needs_upgrade:
+                        try:
+                            upgraded_hash = bcrypt.hashpw(pin.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                            db.users.update_one({'username': user}, {'$set': {'pin': upgraded_hash}})
+                        except PyMongoError as upgrade_err:
+                            logging.warning('Could not auto-upgrade plaintext PIN for %s: %s', user, upgrade_err)
+
                     login_success = True
                     self.root.after(0, self.main_screen) # Switch to main screen on UI thread
                 else:
                     self.show_message('error', 'Login Failed', 'Invalid credentials or wrong branch')
             else:
-                self.show_message('error', 'Login Failed', 'Invalid user ID or PIN')
+                if db.users.count_documents({}) == 0:
+                    self.show_message('error', 'Login Failed', 'No users found. Default users are created at startup. Restart the app and try admin1 / 1234.')
+                else:
+                    self.show_message('error', 'Login Failed', 'Invalid user ID or PIN')
                 
         except PyMongoError as err:
             self.show_message('error', 'Login Error', f'A database error occurred: {err}')
