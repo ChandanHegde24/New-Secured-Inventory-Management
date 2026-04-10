@@ -15,15 +15,11 @@ services:
     container_name: inventory_app
     depends_on:
       - mongo
+    ports:
+      - "8501:8501"
     environment:
       - MONGO_URI=${MONGO_URI:-mongodb://mongo:27017}
       - MONGO_DB_NAME=${MONGO_DB_NAME:-inventory_db}
-      # IMPORTANT: To display Tkinter on the host, you need to forward X11. 
-      # Example for Linux/Mac:
-      - DISPLAY=${DISPLAY}
-    volumes:
-      # Mount X11 socket to allow GUI forwarding
-      - /tmp/.X11-unix:/tmp/.X11-unix
 
 volumes:
   mongo_data:

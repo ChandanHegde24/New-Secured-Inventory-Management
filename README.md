@@ -1,6 +1,6 @@
 ﻿# Secured Multi-Branch Inventory System (MongoDB)
 
-A secure inventory management application built with Python (Tkinter) and MongoDB.
+A secure inventory management application built with Python (Streamlit) and MongoDB.
 All inventory mutations are written to a blockchain-style ledger with proof-of-work.
 
 ## Features
@@ -14,7 +14,7 @@ All inventory mutations are written to a blockchain-style ledger with proof-of-w
 
 ## Project Files
 
-- inventory_app.py: Main application UI and business logic
+- inventory_app.py: Streamlit web UI and business logic
 - blockchain.py: MongoDB-backed blockchain implementation
 - migrate_pins.py: Hashes plaintext user PINs in MongoDB
 - check_env.py: Validates environment files and Mongo settings
@@ -88,14 +88,18 @@ python migrate_pins.py
 ## Run Locally
 
 ```bash
-python inventory_app.py
+streamlit run inventory_app.py
 ```
+
+Then open: <http://localhost:8501>
 
 ## Run with Docker
 
 ```bash
 docker-compose up --build -d
 ```
+
+Then open: <http://localhost:8501>
 
 The app container uses:
 
