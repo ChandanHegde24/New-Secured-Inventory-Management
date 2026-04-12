@@ -9,17 +9,28 @@ services:
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: inventory_db
 
   app:
     build: .
     container_name: inventory_app
+    restart: always
     depends_on:
       - mongo
     ports:
       - "8501:8501"
     environment:
-      - MONGO_URI=${MONGO_URI:-mongodb://mongo:27017}
-      - MONGO_DB_NAME=${MONGO_DB_NAME:-inventory_db}
+      MONGO_URI: mongodb://mongo:27017
+      MONGO_DB_NAME: inventory_db
+      PYTHONUNBUFFERED: 1
+    volumes:
+      - .:/app   # optional (for live code changes)
+    command: >
+      streamlit run inventory_app.py
+      --server.port=8501
+      --server.address=0.0.0.0
+      --server.headless=true
 
 volumes:
   mongo_data:

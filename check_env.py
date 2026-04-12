@@ -8,9 +8,14 @@ print('--- Starting environment check ---')
 try:
     app_env_file = os.environ.get('APP_ENV_FILE', '.env')
     db_env_file = os.environ.get('DB_ENV_FILE', '.env.db')
+    db_env_keys = ('MONGO_URI', 'MONGO_DB_NAME')
+
+    runtime_db_env = {key: os.environ[key] for key in db_env_keys if key in os.environ}
 
     found_app_env = load_dotenv(app_env_file)
     found_db_env = load_dotenv(db_env_file, override=True)
+    for key, value in runtime_db_env.items():
+        os.environ[key] = value
 
     if found_app_env:
         print(f'SUCCESS: Found app env file: {app_env_file}')

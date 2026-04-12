@@ -395,6 +395,7 @@ class Blockchain:
                 return True
 
             previous_block_full = None
+            legacy_linkage_validation_used = 0
             legacy_hash_validation_skipped = 0
             legacy_pow_skipped = 0
 
@@ -411,7 +412,14 @@ class Blockchain:
                     previous_block_full = current_block_full
                     continue
 
-                expected_previous_hash = self.hash(previous_block_full)
+                previous_block_hash_algo = previous_block_full.get('hash_algo')
+                if previous_block_hash_algo == self.block_hash_algo:
+                    expected_previous_hash = self.hash(previous_block_full)
+                else:
+                    expected_previous_hash = previous_block_full.get('current_hash') or self.hash(previous_block_full)
+                    if previous_block_full.get('current_hash'):
+                        legacy_linkage_validation_used += 1
+
                 if current_block_full['previous_hash'] != expected_previous_hash:
                     print(f"Chain invalid: Hash linkage mismatch at block {current_block_full['index']}")
                     return False
@@ -450,5 +458,10 @@ class Blockchain:
                 print(f"Warning: Strict hash validation skipped for {legacy_hash_validation_skipped} legacy block(s).")
             if legacy_pow_skipped:
                 print(f"Warning: Strict PoW validation skipped for {legacy_pow_skipped} legacy block(s).")
+            if legacy_linkage_validation_used:
+                print(
+                    f"Warning: Linkage validation relied on stored hash for "
+                    f"{legacy_linkage_validation_used} legacy block link(s)."
+                )
 
             return True

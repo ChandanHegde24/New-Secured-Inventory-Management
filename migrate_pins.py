@@ -7,8 +7,13 @@ from dotenv import load_dotenv
 # Load app env first, then DB-only overrides.
 APP_ENV_FILE = os.environ.get('APP_ENV_FILE', '.env')
 DB_ENV_FILE = os.environ.get('DB_ENV_FILE', '.env.db')
+DB_ENV_KEYS = ('MONGO_URI', 'MONGO_DB_NAME')
+
+runtime_db_env = {key: os.environ[key] for key in DB_ENV_KEYS if key in os.environ}
 load_dotenv(APP_ENV_FILE)
 load_dotenv(DB_ENV_FILE, override=True)
+for key, value in runtime_db_env.items():
+    os.environ[key] = value
 
 BCRYPT_PREFIXES = ('$2a$', '$2b$', '$2y$')
 

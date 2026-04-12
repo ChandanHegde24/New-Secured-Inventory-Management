@@ -33,8 +33,15 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 APP_ENV_FILE = os.environ.get('APP_ENV_FILE', '.env')
 DB_ENV_FILE = os.environ.get('DB_ENV_FILE', '.env.db')
+DB_ENV_KEYS = ('MONGO_URI', 'MONGO_DB_NAME')
+
+# Keep runtime-provided DB settings (for example Docker compose env vars)
+# from being overwritten by local .env.db values.
+runtime_db_env = {key: os.environ[key] for key in DB_ENV_KEYS if key in os.environ}
 load_dotenv(APP_ENV_FILE)
 load_dotenv(DB_ENV_FILE, override=True)
+for key, value in runtime_db_env.items():
+    os.environ[key] = value
 
 MONGO_URI = os.environ.get('MONGO_URI')
 MONGO_DB_NAME = os.environ.get('MONGO_DB_NAME') or 'inventory_db'
